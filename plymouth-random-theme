@@ -32,6 +32,11 @@ pick_random_theme() {
 			continue
 		available_themes+=(${base_d})
 	done
+	if [ ${#available_themes[@]} -eq 0 ]
+	then
+		echo
+		return
+	fi
 	index=$((RANDOM % ${#available_themes[@]}))
 	echo ${available_themes[$index]}
 }
@@ -94,7 +99,7 @@ then
 	echo
 	die 3 \
 "ERROR\n"\
-"No plymouth theme set in current initramfs\n"\
+" No plymouth theme set in current initramfs\n"\
 "Edit /etc/plymouth/plymouthd.conf to specify a theme and then run\n"\
 "  mkinitcpio -P\n"\
 "first"
@@ -112,8 +117,13 @@ fi
 
 #############
 echo -n "Choosing new theme randomly ..."
-# set new theme
 new_theme=`pick_random_theme`
+if [ -z ${new_theme} ]
+then
+	die 4 \
+" No available themes to choose from.\n"\
+"Perhaps your list in /etc/plymouth/random-theme.exclude is too aggressive."
+fi
 new_theme_dir=/usr/share/plymouth/themes/${new_theme}
 mkdir ${tmpcpio}/${new_theme_dir}
 cp ${new_theme_dir}/*.* ${tmpcpio}/${new_theme_dir}/
@@ -132,7 +142,7 @@ extract_mkinitcpio_routine
 source ${tmpdir}/create_image
 if ! create_image ${tmpcpio} ${tmpdir}/${ramfs_name} ${COMPRESSION}
 then
-	die 4 \
+	die 5 \
 "ERROR\n"\
 "Something went wrong creating new initramfs image"
 fi
