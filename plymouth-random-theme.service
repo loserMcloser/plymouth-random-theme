@@ -1,0 +1,12 @@
+[Unit]
+Description=Choose a random plymouth theme for next boot
+RequiresMountsFor=/boot
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/usr/bin/true
+ExecStop=/usr/bin/plymouth-random-theme
+
+[Install]
+WantedBy=multi-user.target

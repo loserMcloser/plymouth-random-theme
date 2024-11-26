@@ -1,0 +1,161 @@
+#!/bin/bash
+
+tmpdir=""
+
+die() {
+	/usr/bin/echo -e $2
+	[ ! -z ${tmpdir} -a -d ${tmpdir} ] &&
+		rm -rf ${tmpdir}
+	exit $1
+}
+
+extract_mkinitcpio_routine() {
+	local start_n stop_offset stop_n quit_n
+	start_n=`awk '/^create_image/ {print NR; exit}' /usr/bin/mkinitcpio`
+	stop_offset=`sed "1,${start_n}d" /usr/bin/mkinitcpio | awk '/^}/ {print NR; exit}'`
+	stop_n=$((start_n + stop_offset))
+	quit_n=$((stop_n + 1))
+	sed -n "${start_n},${stop_n}p;${quit_n}q" /usr/bin/mkinitcpio > ${tmpdir}/create_image
+}
+
+pick_random_theme() {
+	local available_themes=()
+	local exclude=/etc/plymouth/random-theme.exclude
+	local d index
+	for d in /usr/share/plymouth/themes/*
+	do
+		[ ! -d ${d} ] &&
+			continue
+		base_d=`basename ${d}`
+		[ -f ${exclude} ] &&
+			grep -q ${base_d} ${exclude} &&
+			continue
+		available_themes+=(${base_d})
+	done
+	index=$((RANDOM % ${#available_themes[@]}))
+	echo ${available_themes[$index]}
+}
+
+###############################################################
+######    main
+
+
+#############
+# make sure we're root
+if [ ! $( id -u ) -eq 0 ]
+then
+	die 1 "Must be run as root"
+fi
+
+#############
+# parse options
+backup=0
+for arg in $@
+do
+	shift
+	case $arg in
+		'--backup')
+			backup=1
+			;;
+		*)
+			echo "Unrecognized option $arg"
+			;;
+	esac
+done
+
+ramfs_name=initramfs-linux.img
+
+# make tmpdir
+tmpdir=`mktemp -d`
+
+#############
+echo "Extracting current initramfs"
+tmpcpio=${tmpdir}/cpio
+mkdir ${tmpcpio}
+3cpio --extract --directory=${tmpcpio} /boot/${ramfs_name}
+
+#############
+echo "Checking that current image contains plymouth ..."
+if [ ! -f ${tmpcpio}/etc/plymouth/plymouthd.conf ]
+then
+	die 2 \
+"ERROR\n"
+"Plymouth not present in current initramfs\n"\
+"Add hook plymouth in /etc/mkinitcpio.conf and run\n"\
+"  mkinitcpio -P\n"\
+"first"
+fi
+
+#############
+echo -n "Checking current theme ..."
+cur_theme=`awk -F '=' '/^Theme=.*/ {print $2; exit}' ${tmpcpio}/etc/plymouth/plymouthd.conf`
+if [ -z ${cur_theme} ]
+then
+	echo
+	die 3 \
+"ERROR\n"\
+"No plymouth theme set in current initramfs\n"\
+"Edit /etc/plymouth/plymouthd.conf to specify a theme and then run\n"\
+"  mkinitcpio -P\n"\
+"first"
+fi
+echo " ${cur_theme}"
+
+#############
+echo "Removing old theme files ..."
+if [ ${cur_theme} != "details" -a ${cur_theme} != "text" ]
+then
+	old_theme_dir=${tmpcpio}/usr/share/plymouth/themes/${cur_theme}
+	[ -d ${old_theme_dir} ] &&
+		rm -rf ${old_theme_dir}
+fi
+
+#############
+echo -n "Choosing new theme randomly ..."
+# set new theme
+new_theme=`pick_random_theme`
+new_theme_dir=/usr/share/plymouth/themes/${new_theme}
+mkdir ${tmpcpio}/${new_theme_dir}
+cp ${new_theme_dir}/*.* ${tmpcpio}/${new_theme_dir}/
+sed -i --follow-symlinks "s/^Theme=.*$/Theme=${new_theme}/" /etc/plymouth/plymouthd.conf
+sed -i "s/^Theme=.*$/Theme=${new_theme}/" ${tmpcpio}/etc/plymouth/plymouthd.conf
+echo " ${new_theme}"
+
+#############
+echo "Bundling initramfs back up ..."
+source /etc/mkinitcpio.conf
+[ -z $COMPRESSION ] &&
+	COMPRESSION="zstd"
+[ ${COMPRESSION} = "cat" ] &&
+	unset COMPRESSION_OPTIONS
+extract_mkinitcpio_routine
+source ${tmpdir}/create_image
+if ! create_image ${tmpcpio} ${tmpdir}/${ramfs_name} ${COMPRESSION}
+then
+	die 4 \
+"ERROR\n"\
+"Something went wrong creating new initramfs image"
+fi
+
+#############
+echo "Copying new initramfs to /boot ..."
+if [ $backup -eq 1 ]
+then
+	backup_file=/boot/${ramfs_name}.plymouth-random-theme.bkp
+	mv /boot/${ramfs_name} ${backup_file}
+fi
+mv ${tmpdir}/${ramfs_name} /boot/
+echo "(Previous initramfs backed up as ${backup_file})"
+
+#############
+echo "Logging ..."
+logfile=/var/log/plymouth-random-theme.log
+date >> ${logfile}
+echo "${cur_theme} -> ${new_theme}" >> ${logfile}
+echo >> ${logfile}
+
+#############
+echo "Deleting temp files"
+rm -rf ${tmpdir}
+
+echo "DONE"
