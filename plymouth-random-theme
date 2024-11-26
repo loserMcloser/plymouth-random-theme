@@ -153,9 +153,9 @@ if [ $backup -eq 1 ]
 then
 	backup_file=/boot/${ramfs_name}.plymouth-random-theme.bkp
 	mv /boot/${ramfs_name} ${backup_file}
+	echo "(Previous initramfs backed up as ${backup_file})"
 fi
 mv ${tmpdir}/${ramfs_name} /boot/
-echo "(Previous initramfs backed up as ${backup_file})"
 
 #############
 echo "Logging ..."
