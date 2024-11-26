@@ -4,7 +4,10 @@ This is a script and SystemD service file to choose a new plymouth theme on ever
 The script will randomly choose a theme from `/usr/share/plymouth/themes/` and load it into your initramfs for the next boot.
 You can exclude themes from being randomly chosen by including them in `/etc/plymouth/random-theme.exclude`, one per line. (See the sample `random-theme.exclude` included in this repo.)
 
-There is currently only one command-line option: `--backup` will create a backup of your current initramfs in `/boot`. (The default is to not create a backup, since space on `/boot` might be limited.)
+There is currently only one command-line option: `--backup` will create a backup of your current initramfs in `/boot`.
+The default is to not create a backup, since space on `/boot` might be limited.
+If you want a backup created every time when using the SystemD service,
+copy `plymouth-random-theme-service-backup.conf` from this repo to the location `/etc/systemd/system/plymouth-random-theme.d/backup.conf` and then run `systemctl daemon-reload` (as root).
 
 A record of theme switches is logged to `/var/log/plymouth-random-theme.log` in case your last boot used a theme you don't care for and want to add it to `random-theme.exclude`.
 
